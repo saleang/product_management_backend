@@ -5,11 +5,21 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
+    private function getCloudinary()
+    {
+        return new \Cloudinary\Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('dregujhqe'),
+                'api_key' => env('675224337488739'),
+                'api_secret' => env('a_enKxdIQngNry2KX3l5BO8DwDU'),
+            ]
+        ]);
+    }
+
     public function index()
     {
         try {
@@ -79,8 +89,14 @@ class ProductController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
             ]);
 
+            // Upload to Cloudinary
             if ($request->hasFile('image')) {
-                $validated['image'] = $request->file('image')->store('products', 'public');
+                $cloudinary = $this->getCloudinary();
+                $uploadedFile = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'products']
+                );
+                $validated['image'] = $uploadedFile['secure_url'];
             }
 
             $product = Product::create($validated);
@@ -133,12 +149,27 @@ class ProductController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
             ]);
 
+            // Upload to Cloudinary
             if ($request->hasFile('image')) {
+                $cloudinary = $this->getCloudinary();
+
                 // Delete old image if exists
                 if ($product->image) {
-                    Storage::disk('public')->delete($product->image);
+                    $publicId = $this->getPublicIdFromUrl($product->image);
+                    if ($publicId) {
+                        try {
+                            $cloudinary->uploadApi()->destroy($publicId);
+                        } catch (\Exception $e) {
+                            Log::warning('Failed to delete old image: ' . $e->getMessage());
+                        }
+                    }
                 }
-                $validated['image'] = $request->file('image')->store('products', 'public');
+
+                $uploadedFile = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'products']
+                );
+                $validated['image'] = $uploadedFile['secure_url'];
             }
 
             $product->update($validated);
@@ -168,9 +199,17 @@ class ProductController extends Controller
         try {
             $product = Product::findOrFail($id);
 
-            // Delete image if exists
+            // Delete from Cloudinary
             if ($product->image) {
-                Storage::disk('public')->delete($product->image);
+                $cloudinary = $this->getCloudinary();
+                $publicId = $this->getPublicIdFromUrl($product->image);
+                if ($publicId) {
+                    try {
+                        $cloudinary->uploadApi()->destroy($publicId);
+                    } catch (\Exception $e) {
+                        Log::warning('Failed to delete image: ' . $e->getMessage());
+                    }
+                }
             }
 
             $product->delete();
@@ -189,5 +228,13 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    private function getPublicIdFromUrl($url)
+    {
+        $parts = explode('/', $url);
+        $filename = end($parts);
+        $publicId = 'products/' . pathinfo($filename, PATHINFO_FILENAME);
+        return $publicId;
     }
 }
