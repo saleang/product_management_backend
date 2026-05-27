@@ -9,16 +9,6 @@ use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
-    private function getCloudinary()
-    {
-        return new \Cloudinary\Cloudinary([
-            'cloud' => [
-                'cloud_name' => env('dregujhqe'),
-                'api_key' => env('675224337488739'),
-                'api_secret' => env('a_enKxdIQngNry2KX3l5BO8DwDU'),
-            ]
-        ]);
-    }
 
     public function index()
     {
@@ -89,14 +79,10 @@ class ProductController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
             ]);
 
-            // Upload to Cloudinary
+            // Store image locally
             if ($request->hasFile('image')) {
-                $cloudinary = $this->getCloudinary();
-                $uploadedFile = $cloudinary->uploadApi()->upload(
-                    $request->file('image')->getRealPath(),
-                    ['folder' => 'products']
-                );
-                $validated['image'] = $uploadedFile['secure_url'];
+                $path = $request->file('image')->store('products', 'public');
+                $validated['image'] = $path;
             }
 
             $product = Product::create($validated);
@@ -149,27 +135,10 @@ class ProductController extends Controller
                 'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
             ]);
 
-            // Upload to Cloudinary
+            // Store image locally
             if ($request->hasFile('image')) {
-                $cloudinary = $this->getCloudinary();
-
-                // Delete old image if exists
-                if ($product->image) {
-                    $publicId = $this->getPublicIdFromUrl($product->image);
-                    if ($publicId) {
-                        try {
-                            $cloudinary->uploadApi()->destroy($publicId);
-                        } catch (\Exception $e) {
-                            Log::warning('Failed to delete old image: ' . $e->getMessage());
-                        }
-                    }
-                }
-
-                $uploadedFile = $cloudinary->uploadApi()->upload(
-                    $request->file('image')->getRealPath(),
-                    ['folder' => 'products']
-                );
-                $validated['image'] = $uploadedFile['secure_url'];
+                $path = $request->file('image')->store('products', 'public');
+                $validated['image'] = $path;
             }
 
             $product->update($validated);
@@ -199,19 +168,6 @@ class ProductController extends Controller
         try {
             $product = Product::findOrFail($id);
 
-            // Delete from Cloudinary
-            if ($product->image) {
-                $cloudinary = $this->getCloudinary();
-                $publicId = $this->getPublicIdFromUrl($product->image);
-                if ($publicId) {
-                    try {
-                        $cloudinary->uploadApi()->destroy($publicId);
-                    } catch (\Exception $e) {
-                        Log::warning('Failed to delete image: ' . $e->getMessage());
-                    }
-                }
-            }
-
             $product->delete();
 
             return response()->json([
@@ -228,13 +184,5 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    private function getPublicIdFromUrl($url)
-    {
-        $parts = explode('/', $url);
-        $filename = end($parts);
-        $publicId = 'products/' . pathinfo($filename, PATHINFO_FILENAME);
-        return $publicId;
     }
 }
